@@ -12,6 +12,7 @@ import (
 	"net/textproto"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Message Lint: http://tools.ietf.org/tools/msglint/
@@ -176,6 +177,11 @@ func (m *Message) Bytes() ([]byte, error) {
 			quotedSubject = quotedSubject[1 : len(quotedSubject)-1]
 		}
 		header.Add("Subject", quotedSubject)
+	}
+
+	// Date
+	if _, ok := m.Headers["Date"]; !ok {
+		header.Add("Date", time.Now().UTC().Format(time.RFC822))
 	}
 
 	for k, v := range m.Headers {

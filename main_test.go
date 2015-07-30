@@ -219,3 +219,67 @@ func TestHtmlPlainAttachment(t *testing.T) {
 func TestNoBody(t *testing.T) {
 	testMail(t, false, false, false)
 }
+
+func TestAutoDate(t *testing.T) {
+	startTime := time.Now()
+	m := &Message{}
+	m.SetFrom("Doman Sender <sender@domain.com>")
+	m.AddTo("First person <to_1@domain.com>")
+
+	m.Body = "Test message"
+
+	b, err := m.Bytes()
+	expectNoError(err)
+
+	t.Logf("Bytes: \n%s", b)
+
+	byteReader := bytes.NewReader(b)
+	bufReader := bufio.NewReader(byteReader)
+	headerReader := textproto.NewReader(bufReader)
+	header, err := headerReader.ReadMIMEHeader()
+	expectNoError(err)
+
+	dates, ok := header["Date"]
+	Expect(ok).To(BeTrue(), "Date header not found")
+	Expect(dates).NotTo(BeEmpty(), "Date header is empty")
+	Expect(dates).To(HaveLen(1), "More than one Date header found")
+
+	parsedTime, err := time.Parse(time.RFC822, dates[0])
+
+	t.Logf("%v", parsedTime)
+
+	Expect(parsedTime.Before(time.Now().Add(1*time.Minute))).To(BeTrue(), "Time in Date header is too low")
+	Expect(parsedTime.After(startTime.Add(-1*time.Minute))).To(BeTrue(), "Time in Date header is too high")
+}
+
+func TestManualDate(t *testing.T) {
+	msgTime := time.Now().Add(-30 * time.Minute)
+
+	m := &Message{}
+	m.SetFrom("Doman Sender <sender@domain.com>")
+	m.AddTo("First person <to_1@domain.com>")
+
+	m.Headers = mail.Header{}
+	m.Headers["Date"] = []string{msgTime.Format(time.RFC822)}
+	m.Body = "Test message"
+
+	b, err := m.Bytes()
+	expectNoError(err)
+
+	t.Logf("Bytes: \n%s", b)
+
+	byteReader := bytes.NewReader(b)
+	bufReader := bufio.NewReader(byteReader)
+	headerReader := textproto.NewReader(bufReader)
+	header, err := headerReader.ReadMIMEHeader()
+	expectNoError(err)
+
+	dates, ok := header["Date"]
+	Expect(ok).To(BeTrue(), "Date header not found")
+	Expect(dates).NotTo(BeEmpty(), "Date header is empty")
+	Expect(dates).To(HaveLen(1), "More than one Date header found")
+
+	parsedTime, err := time.Parse(time.RFC822, dates[0])
+
+	Expect(parsedTime.Equal(msgTime.Truncate(time.Minute))).To(BeTrue(), "Time in Date header is not what we specified")
+}

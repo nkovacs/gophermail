@@ -18,8 +18,9 @@ import (
 
 const crlf = "\r\n"
 
-var ErrMissingRecipient = errors.New("No recipient specified. At one To, Cc, or Bcc recipient is required.")
+var ErrMissingRecipient = errors.New("No recipient specified. At least one To, Cc, or Bcc recipient is required.")
 var ErrMissingFromAddress = errors.New("No from address specified.")
+var ErrMissingBody = errors.New("No body specified. At least one of Body or HTMLBody is required.")
 
 // A Message represents an email message.
 // Addresses may be of any form permitted by RFC 5322.
@@ -140,6 +141,10 @@ func (m *Message) Bytes() ([]byte, error) {
 		return nil, ErrMissingRecipient
 	}
 
+	if m.Body == "" && m.HTMLBody == "" {
+		return nil, ErrMissingBody
+	}
+
 	if hasTo {
 		header.Add("To", toAddrs)
 	}
@@ -177,50 +182,68 @@ func (m *Message) Bytes() ([]byte, error) {
 		header[k] = v
 	}
 
-	// Top level multipart writer for our `multipart/mixed` body.
-	mixedw := multipart.NewWriter(buffer)
-
 	header.Add("MIME-Version", "1.0")
-	header.Add("Content-Type", fmt.Sprintf("multipart/mixed;%s boundary=%s", crlf, mixedw.Boundary()))
 
-	err = writeHeader(buffer, header)
-	if err != nil {
-		return nil, err
-	}
-
-	// Write the start of our `multipart/mixed` body.
-	_, err = fmt.Fprintf(buffer, "--%s%s", mixedw.Boundary(), crlf)
-	if err != nil {
-		return nil, err
+	var mixedw *multipart.Writer
+	var hasAttachments = m.Attachments != nil && len(m.Attachments) > 0
+	if hasAttachments {
+		// Top level multipart writer for our `multipart/mixed` body.
+		// only needed if we have attachments
+		mixedw = multipart.NewWriter(buffer)
+		header.Add("Content-Type", fmt.Sprintf("multipart/mixed;%s boundary=%s", crlf, mixedw.Boundary()))
+		err = writeHeader(buffer, header)
+		if err != nil {
+			return nil, err
+		}
+		header = textproto.MIMEHeader{}
+		// Write the start of our `multipart/mixed` body.
+		_, err = fmt.Fprintf(buffer, "--%s%s", mixedw.Boundary(), crlf)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Does the message have a body?
 	if m.Body != "" || m.HTMLBody != "" {
 
-		// Nested multipart writer for our `multipart/alternative` body.
-		altw := multipart.NewWriter(buffer)
+		var altw *multipart.Writer
+		if m.Body != "" && m.HTMLBody != "" {
+			// Nested multipart writer for our `multipart/alternative` body.
+			altw = multipart.NewWriter(buffer)
 
-		header = textproto.MIMEHeader{}
-		header.Add("Content-Type", fmt.Sprintf("multipart/alternative;%s boundary=%s", crlf, altw.Boundary()))
-		err := writeHeader(buffer, header)
-		if err != nil {
-			return nil, err
+			header.Add("Content-Type", fmt.Sprintf("multipart/alternative;%s boundary=%s", crlf, altw.Boundary()))
+			err := writeHeader(buffer, header)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		if m.Body != "" {
-			header = textproto.MIMEHeader{}
+			if altw != nil {
+				header = textproto.MIMEHeader{}
+			}
 			header.Add("Content-Type", "text/plain; charset=utf-8")
 			header.Add("Content-Transfer-Encoding", "quoted-printable")
 			//header.Add("Content-Transfer-Encoding", "base64")
 
-			partw, err := altw.CreatePart(header)
-			if err != nil {
-				return nil, err
+			var writer io.Writer
+			if altw != nil {
+				partw, err := altw.CreatePart(header)
+				if err != nil {
+					return nil, err
+				}
+				writer = partw
+			} else {
+				writer = buffer
+				err = writeHeader(buffer, header)
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			bodyBytes := []byte(m.Body)
-			//encoder := NewBase64MimeEncoder(partw)
-			encoder := qprintable.NewEncoder(qprintable.DetectEncoding(m.Body), partw)
+			//encoder := NewBase64MimeEncoder(writer)
+			encoder := qprintable.NewEncoder(qprintable.DetectEncoding(m.Body), writer)
 			_, err = encoder.Write(bodyBytes)
 			if err != nil {
 				return nil, err
@@ -232,19 +255,31 @@ func (m *Message) Bytes() ([]byte, error) {
 		}
 
 		if m.HTMLBody != "" {
-			header = textproto.MIMEHeader{}
+			if altw != nil {
+				header = textproto.MIMEHeader{}
+			}
 			header.Add("Content-Type", "text/html; charset=utf-8")
 			//header.Add("Content-Transfer-Encoding", "quoted-printable")
 			header.Add("Content-Transfer-Encoding", "base64")
 
-			partw, err := altw.CreatePart(header)
-			if err != nil {
-				return nil, err
+			var writer io.Writer
+			if altw != nil {
+				partw, err := altw.CreatePart(header)
+				if err != nil {
+					return nil, err
+				}
+				writer = partw
+			} else {
+				writer = buffer
+				err = writeHeader(buffer, header)
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			htmlBodyBytes := []byte(m.HTMLBody)
-			encoder := NewBase64MimeEncoder(partw)
-			//encoder := qprintable.NewEncoder(qprintable.DetectEncoding(m.HTMLBody), partw)
+			encoder := NewBase64MimeEncoder(writer)
+			//encoder := qprintable.NewEncoder(qprintable.DetectEncoding(m.HTMLBody), writer)
 			_, err = encoder.Write(htmlBodyBytes)
 			if err != nil {
 				return nil, err
@@ -255,10 +290,17 @@ func (m *Message) Bytes() ([]byte, error) {
 			}
 		}
 
-		altw.Close()
+		if altw != nil {
+			altw.Close()
+		} else {
+			_, err = fmt.Fprintf(buffer, "%s", crlf)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
-	if m.Attachments != nil && len(m.Attachments) > 0 {
+	if hasAttachments {
 
 		for _, attachment := range m.Attachments {
 
@@ -293,9 +335,8 @@ func (m *Message) Bytes() ([]byte, error) {
 			}
 		}
 
+		mixedw.Close()
 	}
-
-	mixedw.Close()
 
 	return buffer.Bytes(), nil
 }

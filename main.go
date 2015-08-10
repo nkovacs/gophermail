@@ -21,7 +21,6 @@ const crlf = "\r\n"
 
 var ErrMissingRecipient = errors.New("No recipient specified. At least one To, Cc, or Bcc recipient is required.")
 var ErrMissingFromAddress = errors.New("No from address specified.")
-var ErrMissingBody = errors.New("No body specified. At least one of Body or HTMLBody is required.")
 
 // A Message represents an email message.
 // Addresses may be of any form permitted by RFC 5322.
@@ -142,10 +141,6 @@ func (m *Message) Bytes() ([]byte, error) {
 		return nil, ErrMissingRecipient
 	}
 
-	if m.Body == "" && m.HTMLBody == "" {
-		return nil, ErrMissingBody
-	}
-
 	if hasTo {
 		header.Add("To", toAddrs)
 	}
@@ -209,100 +204,97 @@ func (m *Message) Bytes() ([]byte, error) {
 		}
 	}
 
-	// Does the message have a body?
-	if m.Body != "" || m.HTMLBody != "" {
+	var altw *multipart.Writer
+	if m.Body != "" && m.HTMLBody != "" {
+		// Nested multipart writer for our `multipart/alternative` body.
+		altw = multipart.NewWriter(buffer)
 
-		var altw *multipart.Writer
-		if m.Body != "" && m.HTMLBody != "" {
-			// Nested multipart writer for our `multipart/alternative` body.
-			altw = multipart.NewWriter(buffer)
-
-			header.Add("Content-Type", fmt.Sprintf("multipart/alternative;%s boundary=%s", crlf, altw.Boundary()))
-			err := writeHeader(buffer, header)
-			if err != nil {
-				return nil, err
-			}
+		header.Add("Content-Type", fmt.Sprintf("multipart/alternative;%s boundary=%s", crlf, altw.Boundary()))
+		err := writeHeader(buffer, header)
+		if err != nil {
+			return nil, err
 		}
+	}
 
-		if m.Body != "" {
-			if altw != nil {
-				header = textproto.MIMEHeader{}
-			}
-			header.Add("Content-Type", "text/plain; charset=utf-8")
-			header.Add("Content-Transfer-Encoding", "quoted-printable")
-			//header.Add("Content-Transfer-Encoding", "base64")
-
-			var writer io.Writer
-			if altw != nil {
-				partw, err := altw.CreatePart(header)
-				if err != nil {
-					return nil, err
-				}
-				writer = partw
-			} else {
-				writer = buffer
-				err = writeHeader(buffer, header)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			bodyBytes := []byte(m.Body)
-			//encoder := NewBase64MimeEncoder(writer)
-			encoder := qprintable.NewEncoder(qprintable.DetectEncoding(m.Body), writer)
-			_, err = encoder.Write(bodyBytes)
-			if err != nil {
-				return nil, err
-			}
-			err = encoder.Close()
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		if m.HTMLBody != "" {
-			if altw != nil {
-				header = textproto.MIMEHeader{}
-			}
-			header.Add("Content-Type", "text/html; charset=utf-8")
-			//header.Add("Content-Transfer-Encoding", "quoted-printable")
-			header.Add("Content-Transfer-Encoding", "base64")
-
-			var writer io.Writer
-			if altw != nil {
-				partw, err := altw.CreatePart(header)
-				if err != nil {
-					return nil, err
-				}
-				writer = partw
-			} else {
-				writer = buffer
-				err = writeHeader(buffer, header)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			htmlBodyBytes := []byte(m.HTMLBody)
-			encoder := NewBase64MimeEncoder(writer)
-			//encoder := qprintable.NewEncoder(qprintable.DetectEncoding(m.HTMLBody), writer)
-			_, err = encoder.Write(htmlBodyBytes)
-			if err != nil {
-				return nil, err
-			}
-			err = encoder.Close()
-			if err != nil {
-				return nil, err
-			}
-		}
-
+	// Only include an empty plain text body if the html body is also empty.
+	if m.Body != "" || m.Body == "" && m.HTMLBody == "" {
 		if altw != nil {
-			altw.Close()
-		} else {
-			_, err = fmt.Fprintf(buffer, "%s", crlf)
+			header = textproto.MIMEHeader{}
+		}
+		header.Add("Content-Type", "text/plain; charset=utf-8")
+		header.Add("Content-Transfer-Encoding", "quoted-printable")
+		//header.Add("Content-Transfer-Encoding", "base64")
+
+		var writer io.Writer
+		if altw != nil {
+			partw, err := altw.CreatePart(header)
 			if err != nil {
 				return nil, err
 			}
+			writer = partw
+		} else {
+			writer = buffer
+			err = writeHeader(buffer, header)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		bodyBytes := []byte(m.Body)
+		//encoder := NewBase64MimeEncoder(writer)
+		encoder := qprintable.NewEncoder(qprintable.DetectEncoding(m.Body), writer)
+		_, err = encoder.Write(bodyBytes)
+		if err != nil {
+			return nil, err
+		}
+		err = encoder.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if m.HTMLBody != "" {
+		if altw != nil {
+			header = textproto.MIMEHeader{}
+		}
+		header.Add("Content-Type", "text/html; charset=utf-8")
+		//header.Add("Content-Transfer-Encoding", "quoted-printable")
+		header.Add("Content-Transfer-Encoding", "base64")
+
+		var writer io.Writer
+		if altw != nil {
+			partw, err := altw.CreatePart(header)
+			if err != nil {
+				return nil, err
+			}
+			writer = partw
+		} else {
+			writer = buffer
+			err = writeHeader(buffer, header)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		htmlBodyBytes := []byte(m.HTMLBody)
+		encoder := NewBase64MimeEncoder(writer)
+		//encoder := qprintable.NewEncoder(qprintable.DetectEncoding(m.HTMLBody), writer)
+		_, err = encoder.Write(htmlBodyBytes)
+		if err != nil {
+			return nil, err
+		}
+		err = encoder.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if altw != nil {
+		altw.Close()
+	} else {
+		_, err = fmt.Fprintf(buffer, "%s", crlf)
+		if err != nil {
+			return nil, err
 		}
 	}
 

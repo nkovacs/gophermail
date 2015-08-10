@@ -87,11 +87,6 @@ func testMail(t *testing.T, plain, html, attachment bool) {
 
 	b, err := m.Bytes()
 
-	if !plain && !html {
-		Expect(err).To(Equal(ErrMissingBody), "No error message on missing body")
-		return
-	}
-
 	expectNoError(err)
 
 	t.Logf("Bytes: \n%s", b)
@@ -105,10 +100,10 @@ func testMail(t *testing.T, plain, html, attachment bool) {
 	mediaType, params := getContentType(header)
 
 	if !attachment && !(plain && html) {
-		if plain {
-			Expect(mediaType).To(Equal("text/plain"), "Content-Type is not text/plain")
-		} else {
+		if html {
 			Expect(mediaType).To(Equal("text/html"), "Content-Type is not text/html")
+		} else {
+			Expect(mediaType).To(Equal("text/plain"), "Content-Type is not text/plain")
 		}
 		return
 	}
@@ -160,7 +155,11 @@ func testMail(t *testing.T, plain, html, attachment bool) {
 					contents := strings.Replace(string(rawContents), "\r\n", "\n", -1)
 
 					t.Logf("\n\n%#v\n\n%#v\n\n", contents, plainBody)
-					Expect(contents).To(Equal(plainBody), "plain text body does not match")
+					expectedBody := plainBody
+					if !plain {
+						expectedBody = ""
+					}
+					Expect(contents).To(Equal(expectedBody), "plain text body does not match")
 
 					plainFound = true
 				case "text/html":
@@ -179,7 +178,7 @@ func testMail(t *testing.T, plain, html, attachment bool) {
 	}
 
 	readParts(boundary, true)
-	if plain {
+	if plain || !plain && !html {
 		Expect(plainFound).To(BeTrue(), "plain text body not found")
 	} else {
 		Expect(plainFound).NotTo(BeTrue(), "plain text body found")
@@ -218,4 +217,8 @@ func TestHtmlPlainAttachment(t *testing.T) {
 
 func TestNoBody(t *testing.T) {
 	testMail(t, false, false, false)
+}
+
+func TestNoBodyAttachment(t *testing.T) {
+	testMail(t, false, false, true)
 }

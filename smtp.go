@@ -52,7 +52,7 @@ func SendTLSMail(addr string, a smtp.Auth, msg *Message, cfg tls.Config) error {
 		to = append(to, address.Address)
 	}
 
-	from := msg.From.String()
+	from := msg.From.Address
 
 	c, err := smtp.Dial(addr)
 	if err != nil {

@@ -1,7 +1,7 @@
 package gophermail
 
 import (
-    "crypto/tls"
+	"crypto/tls"
 	"net/smtp"
 )
 
@@ -31,7 +31,6 @@ func SendMail(addr string, a smtp.Auth, msg *Message) error {
 	return smtp.SendMail(addr, a, msg.From.Address, to, msgBytes)
 }
 
-
 // SendTLSMail does the same thing as SendMail, except with the added
 // option of providing a tls.Config
 func SendTLSMail(addr string, a smtp.Auth, msg *Message, cfg tls.Config) error {
@@ -53,7 +52,7 @@ func SendTLSMail(addr string, a smtp.Auth, msg *Message, cfg tls.Config) error {
 		to = append(to, address.Address)
 	}
 
-    from := msg.From.String()
+	from := msg.From.Address
 
 	c, err := smtp.Dial(addr)
 	if err != nil {
@@ -62,9 +61,9 @@ func SendTLSMail(addr string, a smtp.Auth, msg *Message, cfg tls.Config) error {
 	defer c.Close()
 
 	if ok, _ := c.Extension("STARTTLS"); ok {
-        if err = c.StartTLS(&cfg); err != nil {
-            return err
-        }
+		if err = c.StartTLS(&cfg); err != nil {
+			return err
+		}
 	}
 
 	if a != nil {

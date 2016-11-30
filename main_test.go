@@ -119,9 +119,9 @@ func testMail(t *testing.T, plain, html, attachment bool) {
 	htmlFound := false
 	attachmentFound := false
 
-	var readParts func(string, bool)
-	readParts = func(boundary string, toplevel bool) {
-		multipartReader := multipart.NewReader(bufReader, boundary)
+	var readParts func(io.Reader, string, bool)
+	readParts = func(r io.Reader, boundary string, toplevel bool) {
+		multipartReader := multipart.NewReader(r, boundary)
 
 		for {
 			part, err := multipartReader.NextPart()
@@ -169,7 +169,7 @@ func testMail(t *testing.T, plain, html, attachment bool) {
 				case "multipart/alternative":
 					Expect(params).To(HaveKey("boundary"), "boundary is missing from Content-Type")
 					boundary := params["boundary"]
-					readParts(boundary, false)
+					readParts(part, boundary, false)
 				default:
 					t.Logf("unexpected media type: %v", mediaType)
 				}
@@ -177,7 +177,7 @@ func testMail(t *testing.T, plain, html, attachment bool) {
 		}
 	}
 
-	readParts(boundary, true)
+	readParts(bufReader, boundary, true)
 	if plain || !plain && !html {
 		Expect(plainFound).To(BeTrue(), "plain text body not found")
 	} else {

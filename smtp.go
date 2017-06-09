@@ -33,7 +33,7 @@ func SendMail(addr string, a smtp.Auth, msg *Message) error {
 
 // SendTLSMail does the same thing as SendMail, except with the added
 // option of providing a tls.Config
-func SendTLSMail(addr string, a smtp.Auth, msg *Message, cfg tls.Config) error {
+func SendTLSMail(addr string, a smtp.Auth, msg *Message, cfg *tls.Config) error {
 	msgBytes, err := msg.Bytes()
 	if err != nil {
 		return err
@@ -61,7 +61,7 @@ func SendTLSMail(addr string, a smtp.Auth, msg *Message, cfg tls.Config) error {
 	defer c.Close()
 
 	if ok, _ := c.Extension("STARTTLS"); ok {
-		if err = c.StartTLS(&cfg); err != nil {
+		if err = c.StartTLS(cfg); err != nil {
 			return err
 		}
 	}

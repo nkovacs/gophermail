@@ -5,6 +5,29 @@ import (
 	"net/smtp"
 )
 
+type smtpSender struct {
+	addr   string
+	auth   smtp.Auth
+	tlsCfg *tls.Config
+}
+
+func (s *smtpSender) SendMail(msg *Message) error {
+	if s.tlsCfg == nil {
+		return SendMail(s.addr, s.auth, msg)
+	}
+	return SendTLSMail(s.addr, s.auth, msg, s.tlsCfg)
+}
+
+// NewSMTPSender creates a new Sender using smtp to send messages.
+// auth and tlsCfg are optional.
+func NewSMTPSender(addr string, auth smtp.Auth, tlsCfg *tls.Config) Sender {
+	return &smtpSender{
+		addr:   addr,
+		auth:   auth,
+		tlsCfg: tlsCfg,
+	}
+}
+
 // SendMail connects to the server at addr, switches to TLS if possible,
 // authenticates with mechanism a if possible, and then sends the given Message.
 //

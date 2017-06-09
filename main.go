@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/sloonz/go-qprintable"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -13,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/sloonz/go-qprintable"
 )
 
 // Message Lint: http://tools.ietf.org/tools/msglint/
@@ -44,6 +45,12 @@ type Message struct {
 
 	// Extra mail headers.
 	Headers mail.Header
+}
+
+// Sender can send messages.
+type Sender interface {
+	// SendMail sends the given message.
+	SendMail(msg *Message) error
 }
 
 // appendMailAddresses parses any number of addresses and appends them to a
